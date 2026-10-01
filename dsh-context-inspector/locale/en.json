@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sent context inspector",
+    "description": "Read the exact payload sent to the model, with every field broken out by its source."
+  }
+}

@@ -1,0 +1,10 @@
+# Screenshots and scratch output produced while verifying a plugin in the live GUI.
+.scratch/
+
+# Dependencies, if a sub-project ever gains any. Plugins here are dependency-free by design.
+node_modules/
+
+# Local logs and editor noise.
+*.log
+.DS_Store
+Thumbs.db

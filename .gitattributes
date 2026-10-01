@@ -1,0 +1,3 @@
+# Keep one line ending across platforms: the plugin halves are plain JS served verbatim,
+# and mixed CRLF/LF would make every diff on a Windows checkout look like a rewrite.
+* text=auto eol=lf

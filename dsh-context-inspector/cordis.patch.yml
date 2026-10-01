@@ -1,0 +1,8 @@
+# Bundle layer for @local/dsh-context-inspector.
+#
+# One row serves both halves: its `name` is the exact bare package specifier,
+# which is what lets dsh-client-modules discover the browser bundle declared by
+# the same package's `dsh.client`. The row id is also the Host plugin name.
+- insert:
+    - id: context-inspector
+      name: '@local/dsh-context-inspector'
