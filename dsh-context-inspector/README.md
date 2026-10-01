@@ -112,6 +112,12 @@ The shipped `cordis-plugin-development` skill (`references/practices.md`) says p
 
 The registry transports whole values, so the window's data is republished whenever the Session commits an event. That is the price of the supported `wire.view` channel, and it is why the view carries the payload once and lets records reference it by path instead of duplicating message bodies.
 
+**Every state and view value must be lossless JSON.** The projection value travels as a Remote argument inside a `SessionSummary`, and `isRemoteJsonValue` (in `dsh-typert-protocol`) refuses a nested `undefined` — `undefined` is not JSON, and `JSON.stringify` would silently drop the key. One nested `undefined` makes the Host refuse the forwarded `api-session/added` event, and **every new Session then fails to create** while the plugin is enabled. That is not hypothetical: an unrouted Session once produced `payload.provider = undefined`, and only Sessions without a `request/header` failed — which is exactly the new-Session path. Spread optional fields conditionally instead of assigning `undefined`, and let the offline test's mirrored `isRemoteJsonValue` guard catch it: the empty-state view is a required case, not an edge case.
+
+### A rebuilt file is not a reloaded module
+
+Replacing an installed copy of this package does **not** change what a running Host executes. The Loader imports the row's `file://` URL, and Node's ES module map is keyed by URL for the process lifetime, so re-importing the same path returns the cached instance. Uninstall and reinstall is therefore not enough — the process has to restart to load a fresh module generation.
+
 ### Why the bundle imports no Harness Client package
 
 The same practices reference forbids `require('@deepseek-ai/dsh-client-ui-primitives')` and every other Harness Client package from an authored plugin: they change without notice and a throwing component blanks the slot entry. React therefore comes from the browser module table, every control is written here, and all colour comes from the `Theme.listTokens` tokens — `--dsw-alias-bg-overlay`, `--dsw-alias-label-primary`, `--dsw-alias-border-l1`, `--dsw-alias-state-success-primary` and friends — with `color-mix()` deriving the per-source tints. `dsh.client.inject` only orders package arrival and injects no code.

@@ -112,6 +112,12 @@ DSH 自带的 `cordis-plugin-development` 技能（`references/practices.md`）�
 
 注册表传输的是整体值，所以会话每提交一个事件，窗口数据就会重新发布一次。这是官方 `wire.view` 通道的代价，也正因如此，view 只携带一份 payload，并让记录按路径引用它，而不是重复消息正文。
 
+**state 与 view 里的每个值都必须是无损 JSON。** 投影值会作为 Remote 参数随 `SessionSummary` 一起传输，而 `isRemoteJsonValue`（在 `dsh-typert-protocol` 里）**拒绝嵌套的 `undefined`**——`undefined` 不是 JSON，`JSON.stringify` 会把这个键整个吃掉。只要有一个嵌套 `undefined`，Host 就会拒收转发的 `api-session/added` 事件，于是**在插件启用期间，每一次新建会话都会失败**。这不是假设：曾经有个尚未路由的会话产生了 `payload.provider = undefined`，结果**只有没有 `request/header` 的会话会失败**——正好就是新建会话这条路。可选字段要条件展开，不要赋 `undefined`；并且让离线测试里那份镜像的 `isRemoteJsonValue` 守住它：空状态视图是**必测项**，不是边角情况。
+
+### 文件被重写不等于模块被重新加载
+
+替换已安装的包副本，**不会**改变运行中的 Host 实际执行的代码：Loader 导入的是那一行的 `file://` URL，而 Node 的 ES 模块表在进程生命周期内按 URL 缓存，所以再次 import 同一路径拿到的仍是旧实例。因此卸载重装是不够的——必须**重启进程**才能加载新的模块代。
+
 ### 为什么 bundle 不 import 任何 Harness 客户端包
 
 同一份实践参考禁止插件 `require('@deepseek-ai/dsh-client-ui-primitives')` 及任何其他 Harness 客户端包：它们会无预告地变化，而一个抛错的组件会让整个 slot 条目变成空白。因此 React 来自浏览器模块表，每个控件都在此手写，所有颜色都取自 `Theme.listTokens` 列出的 token —— `--dsw-alias-bg-overlay`、`--dsw-alias-label-primary`、`--dsw-alias-border-l1`、`--dsw-alias-state-success-primary` 等 —— 并用 `color-mix()` 派生各来源的色调。`dsh.client.inject` 只用于排序包到达顺序，不注入任何代码。
