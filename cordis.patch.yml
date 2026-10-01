@@ -1,0 +1,11 @@
+# Root bundle for this repository.
+#
+# Installing this repository as a bundle inserts its sub-projects. `./dsh-context-inspector`
+# is a *relative* plugin name: the Host converts it to a `file://` URL anchored beside this
+# patch file (see `anchorInsertedPluginNames` in `dsh-app-boot`), so the row resolves to the
+# sub-directory inside the installed package instead of a registry package of the same name.
+#
+# Add one `insert` entry per sub-project.
+- insert:
+    - id: context-inspector
+      name: './dsh-context-inspector'
