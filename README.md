@@ -2,9 +2,75 @@
 
 Plugins for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) Web GUI.
 
-Each plugin lives in its own sub-project directory, is self-contained, and is installed into a
-DSH profile with the `plugin_manager` tool. Nothing here is published to npm; every plugin is
-installed from its directory.
+The repository **is** a DSH bundle: its root `package.json` declares `dsh.bundle.patch`, and that
+patch inserts every sub-project. Installing the repository therefore installs the plugins it
+contains — one spec, no per-plugin step.
+
+## Install
+
+### From the DSH Desktop GUI
+
+Sidebar → **Plugins** → **Add plugin**, paste:
+
+```
+Leo-Yossi/DSH-Plugin
+```
+
+then **Install**, and **Enable now** when it finishes. Any pnpm Git spec works equally:
+`github:Leo-Yossi/DSH-Plugin`, `git+https://github.com/Leo-Yossi/DSH-Plugin.git`, or the path of a
+local clone.
+
+### From the `plugin_manager` tool
+
+```
+plugin_manager(action: "install_bundle", target: "github:Leo-Yossi/DSH-Plugin")
+```
+
+`install_bundle` runs `pnpm add <spec>` inside the profile, appends the bundle to
+`dsh.profile.bundles`, and applies it — restart-free when the profile has HMR. Do not hand-edit the
+profile's `package.json` or `cordis.patch.yml`: the manager performs those writes.
+
+### Remove the local install first
+
+If the same sub-project is *also* installed directly (for example from a local path during
+development), both Loader rows resolve to a package with the same name, and `dsh-client-modules`
+refuses the composition with *"resolves from multiple active Loader sources"*. Keep one of the two:
+
+```
+plugin_manager(action: "remove_bundle", target: "@local/dsh-context-inspector")
+```
+
+For ordinary development the local install is the better one — it links rather than copies, so
+editing `index.js` or `client.js` in place changes what the profile serves. The Git install is for
+other machines and clean setups.
+
+### Updating
+
+Git installs do not update themselves. Uninstall and install again to move to a newer commit.
+
+## How one spec installs a sub-project
+
+`cordis.patch.yml` names each sub-project by a **relative path**:
+
+```yaml
+- insert:
+    - id: context-inspector
+      name: './dsh-context-inspector/index.js'
+```
+
+The Host converts a relative plugin name to a `file://` URL anchored beside the patch file
+(`anchorInsertedPluginNames` in `dsh-app-boot`), so the row resolves inside the installed package
+rather than to a registry package of the same name. Two details are load-bearing:
+
+- **The name must point at the entry file, not the directory.** An ES module import of a directory
+  URL fails with `ERR_UNSUPPORTED_DIR_IMPORT`; naming `./dsh-context-inspector` alone would leave
+  the row unable to mount.
+- **The browser half is found by walking up from that file.** `dsh-client-modules` resolves the
+  row's specifier, walks to the nearest `package.json` — the sub-project's own manifest — and
+  serves its bundle from the `dsh.client` declaration there.
+
+Adding a plugin to this repository is therefore: create the sub-project directory, then add one
+`insert` entry.
 
 ## Sub-projects
 
@@ -12,34 +78,12 @@ installed from its directory.
 |---|---|
 | [`dsh-context-inspector/`](dsh-context-inspector/) | Adds a button to the composer that opens a window showing **the exact payload the Session sends to the model** — every field, not just `messages` — in a code view and a field view grouped by source, with fold/expand and search. |
 
-## Install a sub-project
-
-Every sub-project is a DSH *bundle*: its `package.json` declares both `dsh.bundle.patch` (the
-loader row) and, where it has a browser half, `dsh.client`. Install it by pointing
-`plugin_manager` at the directory:
-
-```
-plugin_manager(action: "install_bundle", target: "<absolute path to this repo>/dsh-context-inspector")
-```
-
-`install_bundle` runs `pnpm add <dir>` inside the profile, appends the bundle to
-`dsh.profile.bundles`, and applies it. Do not hand-edit the profile's `package.json` or
-`cordis.patch.yml`: the manager performs those writes, and each hand-made edit needs its own
-approval.
-
-Because the install is a link rather than a copy, editing a plugin's `index.js` or `client.js` in
-place changes what the running profile serves.
-
-Removing one:
-
-```
-plugin_manager(action: "remove_bundle", target: "@local/dsh-context-inspector")
-```
-
 ## Layout
 
 ```
 .
+├── package.json             # the root bundle: dsh.bundle.patch
+├── cordis.patch.yml         # inserts each sub-project by relative path
 ├── dsh-context-inspector/   # sub-project: the plugin (manifest, host half, browser half, tests)
 └── tools/                   # development tooling shared by the sub-projects
     ├── cdp.mjs                    # minimal Chrome DevTools Protocol client (no dependencies)

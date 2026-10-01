@@ -1,11 +1,16 @@
 # Root bundle for this repository.
 #
-# Installing this repository as a bundle inserts its sub-projects. `./dsh-context-inspector`
-# is a *relative* plugin name: the Host converts it to a `file://` URL anchored beside this
-# patch file (see `anchorInsertedPluginNames` in `dsh-app-boot`), so the row resolves to the
-# sub-directory inside the installed package instead of a registry package of the same name.
+# Installing this repository as a bundle inserts its sub-projects. Each `name` is a *relative*
+# plugin name: the Host converts it to a `file://` URL anchored beside this patch file (see
+# `anchorInsertedPluginNames` in `dsh-app-boot`), so the row resolves to the file inside the
+# installed package instead of a registry package.
+#
+# The path must name the entry FILE, not the directory: an ES module import of a directory URL
+# fails with ERR_UNSUPPORTED_DIR_IMPORT. `dsh-client-modules` then walks up from that file to the
+# nearest package.json, which is the sub-project's own manifest, and serves its browser bundle
+# from the `dsh.client` declaration there.
 #
 # Add one `insert` entry per sub-project.
 - insert:
     - id: context-inspector
-      name: './dsh-context-inspector'
+      name: './dsh-context-inspector/index.js'

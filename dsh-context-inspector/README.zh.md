@@ -138,12 +138,30 @@ DSH 自带的 `cordis-plugin-development` 技能（`references/practices.md`）�
 
 ## 安装
 
+本插件所在的仓库**本身就是 DSH bundle**，所以常规安装只要一个 spec —— 机制见[仓库根 README](../README.md)。
+
+**在 DSH Desktop 界面里：** 侧边栏 → **Plugins** → **Add plugin**：
+
+```
+Leo-Yossi/DSH-Plugin
+```
+
+**用 `plugin_manager` 工具**（同一个 spec）：
+
+```
+install_bundle(target: "github:Leo-Yossi/DSH-Plugin")
+```
+
+**在本目录下、用于开发：**
+
 ```powershell
-# 用 plugin_manager 工具，target 传包目录的绝对路径
+# target 传包目录的绝对路径
 install_bundle(target: "<本仓库路径>\dsh-context-inspector")
 ```
 
-`install_bundle` 会在 profile 里执行 `pnpm add <dir>`、把 bundle 追加进 `dsh.profile.bundles` 并应用。不要手改 profile 的 `package.json` 或 `cordis.patch.yml`。本包无运行时依赖，安装可离线完成，并且是链接（link）而非拷贝 —— 所以就地修改 `index.js` / `client.js` 会直接改变 profile 所提供的内容。
+`install_bundle` 会在 profile 里执行 `pnpm add <spec>`、把 bundle 追加进 `dsh.profile.bundles` 并应用。不要手改 profile 的 `package.json` 或 `cordis.patch.yml`。
+
+**两种安装只能留一个**：仓库安装与目录安装会产生两行指向同一个包名的 Loader 行，`dsh-client-modules` 会以 *"resolves from multiple active Loader sources"* 拒绝合成。目录安装是链接（link）而非拷贝，改 `index.js` / `client.js` 立即生效 —— 开发时用这个；仓库安装给其他机器和干净环境用。两者都无运行时依赖，除拉取仓库外可离线完成。
 
 ## 测试
 
