@@ -44,9 +44,12 @@ refuses the composition with *"resolves from multiple active Loader sources"*. K
 plugin_manager(action: "remove_bundle", target: "@local/dsh-context-inspector")
 ```
 
-For ordinary development the local install is the better one — it links rather than copies, so
-editing `index.js` or `client.js` in place changes what the profile serves. The Git install is for
-other machines and clean setups.
+For ordinary development the local install is the better one — it links rather than copies, so what
+the profile serves follows your working tree without a republish. That is not the same as a live
+reload, though: a running Host keeps the module instance it already imported (Node's ES module map
+is keyed by URL), so a change to a sub-project's `index.js` needs a process restart, while a
+`client.js` change is re-fetched by the browser through the revision-stamped module system. The Git
+install is for other machines and clean setups.
 
 ### Updating
 

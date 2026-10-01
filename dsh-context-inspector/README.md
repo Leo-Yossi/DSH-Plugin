@@ -174,10 +174,14 @@ and applies it. Do not edit the profile's `package.json` or `cordis.patch.yml` b
 
 Install **one of the two, not both**: the repository install and the directory install produce two
 Loader rows for the same package name, which `dsh-client-modules` refuses with *"resolves from
-multiple active Loader sources"*. The directory install links rather than copies, so `index.js` and
-`client.js` edits are live — that is the one to use while working on it; the repository install is
-for other machines and clean setups. Neither needs a runtime dependency, so both install offline
-apart from fetching the repository.
+multiple active Loader sources"*. The directory install links rather than copies, so what the profile
+serves follows your working tree — the one to use while working on it; the repository install is for
+other machines and clean setups. Neither needs a runtime dependency, so both install offline apart
+from fetching the repository.
+
+Either way, a **change to `index.js` needs a process restart**: a running Host keeps the module
+instance it already imported, because Node's ES module map is keyed by URL. Reinstalling is not
+enough. A `client.js` change is re-fetched by the browser instead, so it follows a page reload.
 
 ## Test
 

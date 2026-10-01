@@ -169,7 +169,9 @@ install_bundle(target: "<本仓库路径>\dsh-context-inspector")
 
 `install_bundle` 会在 profile 里执行 `pnpm add <spec>`、把 bundle 追加进 `dsh.profile.bundles` 并应用。不要手改 profile 的 `package.json` 或 `cordis.patch.yml`。
 
-**两种安装只能留一个**：仓库安装与目录安装会产生两行指向同一个包名的 Loader 行，`dsh-client-modules` 会以 *"resolves from multiple active Loader sources"* 拒绝合成。目录安装是链接（link）而非拷贝，改 `index.js` / `client.js` 立即生效 —— 开发时用这个；仓库安装给其他机器和干净环境用。两者都无运行时依赖，除拉取仓库外可离线完成。
+**两种安装只能留一个**：仓库安装与目录安装会产生两行指向同一个包名的 Loader 行，`dsh-client-modules` 会以 *"resolves from multiple active Loader sources"* 拒绝合成。目录安装是链接（link）而非拷贝，**profile 提供的内容会跟随你的工作区** —— 开发时用这个；仓库安装给其他机器和干净环境用。两者都无运行时依赖，除拉取仓库外可离线完成。
+
+但无论哪种方式，**改 `index.js` 都必须重启进程**：运行中的 Host 保留它已经 import 过的那个模块实例，因为 Node 的 ES 模块表按 URL 缓存——重装也没用。改 `client.js` 则不同，浏览器会按带版本的模块系统重新拉取，刷新页面即可生效。
 
 ## 测试
 
