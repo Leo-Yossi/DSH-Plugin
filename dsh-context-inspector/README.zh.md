@@ -143,8 +143,10 @@ DSH 自带的 `cordis-plugin-development` 技能（`references/practices.md`）�
 **在 DSH Desktop 界面里：** 侧边栏 → **Plugins** → **Add plugin**：
 
 ```
-Leo-Yossi/DSH-Plugin
+github:Leo-Yossi/DSH-Plugin
 ```
+
+（裸的 `owner/repo` 会被输入框的解析器拒绝——它会被当成 npm 包名。请带 `github:` 前缀，或用 `https://github.com/Leo-Yossi/DSH-Plugin`。）
 
 **用 `plugin_manager` 工具**（同一个 spec）：
 

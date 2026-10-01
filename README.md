@@ -13,12 +13,16 @@ contains — one spec, no per-plugin step.
 Sidebar → **Plugins** → **Add plugin**, paste:
 
 ```
-Leo-Yossi/DSH-Plugin
+github:Leo-Yossi/DSH-Plugin
 ```
 
-then **Install**, and **Enable now** when it finishes. Any pnpm Git spec works equally:
-`github:Leo-Yossi/DSH-Plugin`, `git+https://github.com/Leo-Yossi/DSH-Plugin.git`, or the path of a
-local clone.
+then **Install**, and **Enable now** when it finishes.
+
+The field's parser (`parseInstallSpec` in `dsh-plugin-manager`) takes a git host shorthand
+(`github:owner/repo`), a git URL (`git+https://…`), or a hosted repository URL
+(`https://github.com/Leo-Yossi/DSH-Plugin`). It does **not** take a bare `owner/repo`: with no host
+prefix that parses as an npm package name, whose pattern allows no slash, so it is refused with
+*"not a package name the registry accepts"*.
 
 ### From the `plugin_manager` tool
 

@@ -144,8 +144,11 @@ spec — see the [repository README](../README.md) for the mechanics.
 **From the DSH Desktop GUI:** sidebar → **Plugins** → **Add plugin**:
 
 ```
-Leo-Yossi/DSH-Plugin
+github:Leo-Yossi/DSH-Plugin
 ```
+
+(A bare `owner/repo` is refused by the field's parser — it reads as an npm package name. Use the
+`github:` prefix, or `https://github.com/Leo-Yossi/DSH-Plugin`.)
 
 **From the `plugin_manager` tool** (same spec):
 
