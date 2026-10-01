@@ -250,6 +250,103 @@ ok(
 
 //#endregion
 
+//#region lossless JSON
+
+/**
+ * Mirrors `isRemoteJsonValue` from `@deepseek-ai/dsh-typert-protocol`, which
+ * guards every Remote carrier. Refused: a nested `undefined`, a non-finite
+ * number, `-0`, a non-plain object, a symbol key, a sparse array and a cycle.
+ *
+ * This exists because a projection value travels as a Remote argument inside a
+ * `SessionSummary`: one nested `undefined` makes the Host refuse
+ * `api-session/added` and **new Session creation fails**. The empty-state case
+ * below is exactly the shape that did it.
+ * @param value - candidate.
+ * @param path - diagnostic path of the value.
+ * @param ancestors - cycle detection.
+ * @returns the first offending path, or undefined when the value is lossless.
+ */
+function losslessFault(value, path = '$', ancestors = new Set()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return undefined
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && !Object.is(value, -0)
+      ? undefined
+      : `${path}: ${Object.is(value, -0) ? '-0' : 'non-finite number'}`
+  }
+  if (typeof value !== 'object') return `${path}: ${typeof value}`
+  if (ancestors.has(value)) return `${path}: cycle`
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) return `${path}: non-array prototype`
+      if (Reflect.ownKeys(value).length !== value.length + 1) return `${path}: sparse or extra keys`
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) return `${path}[${index}]: hole`
+        const fault = losslessFault(value[index], `${path}[${index}]`, ancestors)
+        if (fault !== undefined) return fault
+      }
+      return undefined
+    }
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) return `${path}: non-plain object`
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== 'string') return `${path}: symbol key`
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      if (descriptor?.enumerable !== true) return `${path}.${key}: non-enumerable`
+      const fault = losslessFault(Reflect.get(value, key), `${path}.${key}`, ancestors)
+      if (fault !== undefined) return fault
+    }
+    return undefined
+  } finally {
+    ancestors.delete(value)
+  }
+}
+
+// The checker must be able to fail, or every assertion below is worthless.
+ok(
+  losslessFault({ provider: undefined }) !== undefined,
+  'lossless: the checker rejects a nested undefined (the exact production bug)',
+)
+ok(losslessFault({ ok: [1, 'a', null, true] }) === undefined, 'lossless: the checker accepts plain JSON')
+
+const emptyState = definition.init(undefined, 0)
+ok(
+  losslessFault(emptyState) === undefined,
+  `lossless: an empty fold state (${String(losslessFault(emptyState))})`,
+)
+const emptyView = definition.wire.view(emptyState)
+const emptyFault = losslessFault(emptyView)
+ok(
+  emptyFault === undefined,
+  'lossless: the view of a Session with no request yet — the case that broke session creation',
+  String(emptyFault),
+)
+ok(
+  !Object.hasOwn(emptyView.payload, 'provider') && !Object.hasOwn(emptyView.payload, 'model'),
+  'lossless: an unrouted Session omits the route keys instead of setting them to undefined',
+)
+ok(
+  losslessFault(state) === undefined,
+  `lossless: a populated fold state is checkpointable (${String(losslessFault(state))})`,
+)
+ok(
+  losslessFault(view) === undefined,
+  `lossless: a populated view crosses the Remote carrier (${String(losslessFault(view))})`,
+)
+ok(
+  losslessFault(replaced) === undefined,
+  `lossless: a replaced-surface view crosses the Remote carrier (${String(losslessFault(replaced))})`,
+)
+// A session that logged events but has not built a request yet is the other
+// half of the empty case: a header exists but is null.
+const halfState = definition.apply(definition.init(undefined, 0), event(1, 'turn/start', { turn: 1 }))
+ok(
+  losslessFault(definition.wire.view(halfState)) === undefined,
+  'lossless: a view with events but no request header',
+)
+
+//#endregion
+
 //#region client half
 
 const clientSource = readFileSync(join(root, 'client.js'), 'utf8')

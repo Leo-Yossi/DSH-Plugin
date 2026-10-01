@@ -414,11 +414,13 @@ function appendSurface(state, event) {
   const node = {
     seq: event.seq,
     time: event.time,
-    turn: typeof data?.turn === 'number' ? data.turn : undefined,
     type: event.type,
     origin: originForSurface(event),
     message,
     emits: emitsMessage(event, message),
+    // Absent rather than `undefined`: every value in this state is checkpointed,
+    // and a nested `undefined` is not lossless JSON.
+    ...(typeof data?.turn === 'number' ? { turn: data.turn } : {}),
   }
 
   const op = event.surfaceOp
@@ -484,8 +486,12 @@ function buildView(state) {
   const toolHistory = toolHistorySnapshot(state, tools)
 
   const payload = {
-    provider: config.provider,
-    model: config.model,
+    // Every field spreads conditionally: a nested `undefined` is not lossless
+    // JSON, and this value travels as a Remote argument inside a
+    // `SessionSummary`. A session with no `request/header` yet therefore
+    // carries no route at all, instead of keys JSON would silently drop.
+    ...(config.provider === undefined ? {} : { provider: config.provider }),
+    ...(config.model === undefined ? {} : { model: config.model }),
     ...(config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort }),
     ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
     ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),
