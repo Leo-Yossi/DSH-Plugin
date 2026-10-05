@@ -539,6 +539,48 @@ if (internals !== undefined) {
 
 //#endregion
 
+//#region window ownership and the click-through backdrop
+
+// One Session can be mounted in the main conversation and in a right-sidebar
+// chat tab at the same time; each renders its own button. Only the occurrence
+// that was clicked may look open, or the two panes mirror each other.
+if (internals !== undefined) {
+  const owns = internals.occurrenceOwns
+  ok(
+    typeof owns === 'function',
+    'occurrence: the ownership rule is exposed for the offline test',
+  )
+  ok(owns({ open: true, owner: 'occ1' }, 'occ1') === true, 'occurrence: the pane that opened it owns the window')
+  ok(
+    owns({ open: true, owner: 'occ1' }, 'occ2') === false,
+    'occurrence: a second pane showing the same Session does not mirror the first',
+  )
+  ok(owns({ open: false, owner: 'occ1' }, 'occ1') === false, 'occurrence: a closed window is owned by nobody')
+  ok(
+    owns({ open: true, owner: undefined }, 'occ1') === false,
+    'occurrence: a window with no recorded owner is owned by nobody',
+  )
+}
+
+// `shell.overlay` is a click-through layer whose occupants opt back into
+// pointer events. A blocking full-screen scrim swallows clicks meant for the
+// app underneath — on Windows its title-bar controls live in the page at the
+// top right — so the backdrop must stay `none` and only the panel takes input.
+ok(
+  /\.ci-scrim\{[^}]*pointer-events:none/.test(clientSource),
+  'backdrop: the scrim is click-through so the app underneath keeps its own buttons',
+)
+ok(
+  /\.ci-panel\{[^}]*pointer-events:auto/.test(clientSource),
+  'backdrop: the panel itself opts back into pointer events',
+)
+ok(
+  !/className: 'ci-scrim',[\s\S]{0,200}?onMouseDown/.test(clientSource),
+  'backdrop: the click-through scrim carries no click handler that could dismiss or swallow',
+)
+
+//#endregion
+
 console.log(`${String(checks - failures)}/${String(checks)} checks passed`)
 if (failures > 0) {
   console.error(`${String(failures)} check(s) failed`)

@@ -49,9 +49,45 @@ window.__ModuleLoader__.load({
      * that is what `useProjection` yields. The payload the model receives is
      * `view.payload`; records reference it by JSON-pointer path, so resolving a
      * record always means walking `view.payload`, never the view.
+     *
+     * `owner` is the composer occurrence that opened the window. One Session can
+     * be mounted more than once at a time — the main conversation and a
+     * right-sidebar chat tab are separate occurrences — and each renders its own
+     * button. Keying on the occurrence instead of the Session keeps those two
+     * buttons from mirroring each other: only the one that was clicked shows as
+     * open, and only it owns the window it opened.
      */
-    let panelState = { open: false, sessionId: undefined, view: undefined }
+    let panelState = { open: false, owner: undefined, sessionId: undefined, view: undefined }
     const panelListeners = new Set()
+
+    /** Monotonic id handed to each mounted button occurrence. */
+    let buttonOccurrence = 0
+
+    /**
+     * A stable identity for one mounted button. Two occurrences of the same
+     * Session resolve to two different ids, which is exactly what has to be told
+     * apart.
+     * @returns this occurrence's id.
+     */
+    function useOccurrenceKey() {
+      const ref = useRef(null)
+      if (ref.current === null) {
+        buttonOccurrence += 1
+        ref.current = 'occ' + String(buttonOccurrence)
+      }
+      return ref.current
+    }
+
+    /**
+     * Whether one composer occurrence owns the open window. Extracted from the
+     * component so the rule that two panes must not mirror each other is
+     * testable without a DOM.
+     * @param state - the shared store snapshot.
+     * @param occurrence - the id of the occurrence asking.
+     */
+    function occurrenceOwns(state, occurrence) {
+      return state.open === true && state.owner === occurrence
+    }
 
     function publish(patch) {
       panelState = Object.assign({}, panelState, patch)
@@ -391,12 +427,21 @@ window.__ModuleLoader__.load({
      * type sizes are literal geometry. Per-source color rides an inline
      * `--ci-tone` custom property, which is how the host UI itself passes
      * dynamic values into a stylesheet.
+     *
+     * The backdrop is **click-through** — `pointer-events: none` on the layer,
+     * `auto` only on the panel. `shell.overlay` is documented as a click-through
+     * layer whose occupants opt back into pointer events, and on Windows the
+     * app's own title-bar controls live in the page at the top right: a
+     * full-screen blocking scrim would swallow clicks meant for them. The dim
+     * stays visible (it is only paint) and Escape or the close button still
+     * dismisses the window.
      */
     const CSS = [
       '.ci-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;',
-      'justify-content:center;padding:24px;pointer-events:auto;',
-      'background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent)}',
-      '.ci-panel{display:flex;flex-direction:column;box-sizing:border-box;width:min(1100px,100%);',
+      'justify-content:center;padding:24px;pointer-events:none;',
+      'background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}',
+      '.ci-panel{pointer-events:auto;display:flex;flex-direction:column;box-sizing:border-box;',
+      'width:min(1100px,100%);',
       'height:min(780px,100%);background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);',
       'border:.5px solid var(--dsw-alias-border-l2);border-radius:14px;overflow:hidden;',
       'font-size:13px;line-height:20px}',
@@ -1384,19 +1429,17 @@ window.__ModuleLoader__.load({
         null,
         h('style', null, CSS),
         h(
+          // The backdrop carries no pointer handler on purpose: it is
+          // click-through, so a click outside the panel reaches the app
+          // underneath instead of being swallowed or dismissing the window.
           'div',
-          {
-            className: 'ci-scrim',
-            onMouseDown: (event) => {
-              if (event.target === event.currentTarget) close()
-            },
-          },
+          { className: 'ci-scrim' },
           h(
             'div',
             {
               className: 'ci-panel',
               role: 'dialog',
-              'aria-modal': 'true',
+              'aria-modal': 'false',
               'aria-label': tOf(t, 'panel.title'),
               tabIndex: -1,
               ref: panelRef,
@@ -1606,37 +1649,42 @@ window.__ModuleLoader__.load({
     function InspectorButton(props) {
       const { t, sessionId, useProjection } = props
       const state = usePanelState()
+      const occurrence = useOccurrenceKey()
       const view = typeof useProjection === 'function' ? useProjection(PROJECTION_KEY) : undefined
       const known = typeof useProjection === 'function'
-      const open = state.open && state.sessionId === sessionId
+      // This occurrence owns the window only when it is the one that opened it,
+      // so a second composer showing the same Session never looks or behaves
+      // like the button that was actually clicked.
+      const open = occurrenceOwns(state, occurrence)
 
       // The button is the only registration that can read the Session
       // projection, so it keeps the shared store current while the window is up.
       useEffect(() => {
         const current = getPanelState()
-        if (!current.open || current.sessionId !== sessionId) return
-        if (current.view === view) return
-        publish({ view })
-      }, [view, sessionId])
+        if (!current.open || current.owner !== occurrence) return
+        if (current.view === view && current.sessionId === sessionId) return
+        publish({ view, sessionId })
+      }, [view, sessionId, occurrence])
 
-      // Leaving the Session (or losing the composer) closes the window.
+      // Losing this composer closes the window, but only the window this
+      // occurrence opened: an unrelated pane unmounting must not close it.
       useEffect(
         () => () => {
           const current = getPanelState()
-          if (current.sessionId !== sessionId) return
-          publish({ open: false, sessionId: undefined, view: undefined })
+          if (current.owner !== occurrence) return
+          publish({ open: false, owner: undefined, sessionId: undefined, view: undefined })
         },
-        [sessionId],
+        [occurrence],
       )
 
       const onClick = useCallback(() => {
         const current = getPanelState()
-        if (current.open && current.sessionId === sessionId) {
+        if (current.open && current.owner === occurrence) {
           publish({ open: false })
           return
         }
-        publish({ open: true, sessionId, view })
-      }, [view, sessionId])
+        publish({ open: true, owner: occurrence, sessionId, view })
+      }, [view, sessionId, occurrence])
 
       const label = tOf(t, 'entry.title')
       const disabled = !known
@@ -1705,6 +1753,7 @@ window.__ModuleLoader__.load({
       collectCodeHits,
       collectFieldHits,
       attrEscape,
+      occurrenceOwns,
     }
 
     return { inject, apply, internals }
