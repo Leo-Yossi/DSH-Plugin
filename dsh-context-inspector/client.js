@@ -232,6 +232,9 @@ window.__ModuleLoader__.load({
       'panel.title': 'Sent context',
       'panel.subtitle': 'The payload this Session hands to the model',
       'panel.close': 'Close',
+      'panel.maximize': 'Maximize',
+      'panel.restore': 'Restore size',
+      'panel.resize': 'Drag to resize',
 
       'view.code': 'Code',
       'view.fields': 'Fields',
@@ -330,6 +333,9 @@ window.__ModuleLoader__.load({
       'panel.title': '已发送上下文',
       'panel.subtitle': '本会话交给模型的完整 payload',
       'panel.close': '关闭',
+      'panel.maximize': '最大化',
+      'panel.restore': '还原大小',
+      'panel.resize': '拖动可缩放',
 
       'view.code': '代码视图',
       'view.fields': '字段视图',
@@ -428,29 +434,31 @@ window.__ModuleLoader__.load({
      * `--ci-tone` custom property, which is how the host UI itself passes
      * dynamic values into a stylesheet.
      *
-     * The backdrop is **click-through** — `pointer-events: none` on the layer,
-     * `auto` only on the panel. `shell.overlay` is documented as a click-through
-     * layer whose occupants opt back into pointer events, and on Windows the
-     * app's own title-bar controls live in the page at the top right: a
-     * full-screen blocking scrim would swallow clicks meant for them. The dim
-     * stays visible (it is only paint) and Escape or the close button still
-     * dismisses the window.
+     * This is a **floating window, not a modal**: there is deliberately no
+     * backdrop, so the app underneath keeps every click — `shell.overlay` is a
+     * click-through layer and this entry opts back into pointer events only for
+     * its own box. Its position and size come from the clamped frame in JS, and
+     * the top clamp is what keeps it clear of the in-page Windows title bar and
+     * its window controls.
      */
     const CSS = [
-      '.ci-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;',
-      'justify-content:center;padding:24px;pointer-events:none;',
-      'background:color-mix(in srgb,var(--dsw-alias-bg-base) 45%,transparent)}',
-      '.ci-panel{pointer-events:auto;display:flex;flex-direction:column;box-sizing:border-box;',
-      'width:min(1100px,100%);',
-      'height:min(780px,100%);background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);',
+      '.ci-win{position:fixed;z-index:2147483000;pointer-events:auto;display:flex;',
+      'flex-direction:column;box-sizing:border-box;',
+      'background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);',
       'border:.5px solid var(--dsw-alias-border-l2);border-radius:14px;overflow:hidden;',
+      'box-shadow:0 18px 48px color-mix(in srgb,var(--dsw-alias-label-primary) 20%,transparent);',
       'font-size:13px;line-height:20px}',
-      '.ci-panel:focus{outline:none}',
-      '.ci-head{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;',
-      'border-bottom:.5px solid var(--dsw-alias-border-l1)}',
+      '.ci-win:focus{outline:none}',
+      '.ci-head{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;cursor:move;',
+      'user-select:none;border-bottom:.5px solid var(--dsw-alias-border-l1)}',
       '.ci-head-main{flex:1;min-width:0}',
       '.ci-title{font-size:14px;font-weight:600}',
       '.ci-sub{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;margin-top:2px}',
+      '.ci-resize{position:absolute;right:0;bottom:0;width:20px;height:20px;cursor:nwse-resize}',
+      '.ci-resize::after{content:"";position:absolute;right:4px;bottom:4px;width:9px;height:9px;',
+      'border-right:2px solid var(--dsw-alias-border-l2);border-bottom:2px solid var(--dsw-alias-border-l2);',
+      'border-radius:0 0 5px 0}',
+      '.ci-resize:hover::after{border-color:var(--dsw-alias-brand-primary)}',
       '.ci-close{cursor:pointer;border:none;background:transparent;color:var(--dsw-alias-label-secondary);',
       'border-radius:6px;width:28px;height:28px;font-size:16px;line-height:1;flex:none}',
       '.ci-close:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
@@ -1178,6 +1186,104 @@ window.__ModuleLoader__.load({
 
     //#endregion
 
+    //#region floating window geometry
+
+    /** Smallest the window may be resized to. */
+    const MIN_WINDOW_WIDTH = 520
+    const MIN_WINDOW_HEIGHT = 320
+    /** Size the window opens at; shrunk to fit a small viewport. */
+    const PREFERRED_WINDOW_WIDTH = 1100
+    const PREFERRED_WINDOW_HEIGHT = 780
+    /** Gap kept between the window and the edges it is clamped against. */
+    const WINDOW_GAP = 12
+    /** Extra space kept between the window's top edge and the title bar. */
+    const WINDOW_TOP_GAP = 4
+
+    /**
+     * Height of the app's own title strip, measured rather than assumed. On
+     * Windows the window controls live *in the page* at the top right
+     * (`data-windows-titlebar`), so a floating panel that is allowed to rise
+     * above them steals their clicks — the occlusion this window must not have.
+     * @returns pixel height to stay below, or 0 when the shell has no such strip.
+     */
+    function titleBarInset() {
+      if (typeof document === 'undefined') return 0
+      let bottom = 0
+      for (const strip of document.querySelectorAll('[data-window-drag]')) {
+        bottom = Math.max(bottom, Math.round(strip.getBoundingClientRect().bottom))
+      }
+      if (bottom > 0) return bottom
+      // A shell build that marks its Windows title bar but exposes no drag strip
+      // to measure still gets a reserved row, rather than none: reserving too
+      // much only costs a little space, reserving nothing puts the window back
+      // on top of the window controls.
+      if (document.documentElement.hasAttribute('data-windows-titlebar')) return 36
+      return 0
+    }
+
+    /** The viewport size plus the strip the window must stay clear of. */
+    function windowBounds() {
+      return {
+        width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+        height: typeof window === 'undefined' ? 800 : window.innerHeight,
+        topInset: titleBarInset(),
+      }
+    }
+
+    /**
+     * Keep the window usable: at least `MIN_WINDOW_*`, no larger than the
+     * viewport, never past the left/right edges, and **never above the title
+     * bar** — that last constraint is what permanently keeps it off the window
+     * controls, no matter where it is dragged or resized to.
+     * @param frame - requested `{ x, y, width, height }`.
+     * @param bounds - `{ width, height, topInset }`.
+     * @returns a frame satisfying every constraint.
+     */
+    function clampFrame(frame, bounds) {
+      const maxWidth = Math.max(MIN_WINDOW_WIDTH, bounds.width - WINDOW_GAP * 2)
+      const maxHeight = Math.max(MIN_WINDOW_HEIGHT, bounds.height - bounds.topInset - WINDOW_GAP)
+      const width = Math.min(Math.max(MIN_WINDOW_WIDTH, frame.width), maxWidth)
+      const height = Math.min(Math.max(MIN_WINDOW_HEIGHT, frame.height), maxHeight)
+      const minY = bounds.topInset + WINDOW_TOP_GAP
+      return {
+        width,
+        height,
+        x: Math.min(Math.max(WINDOW_GAP, frame.x), Math.max(WINDOW_GAP, bounds.width - width - WINDOW_GAP)),
+        y: Math.min(Math.max(minY, frame.y), Math.max(minY, bounds.height - height - WINDOW_GAP)),
+      }
+    }
+
+    /** The frame the window opens at: centred, and entirely below the title bar. */
+    function initialFrame(bounds) {
+      const width = Math.min(PREFERRED_WINDOW_WIDTH, bounds.width - WINDOW_GAP * 2)
+      const height = Math.min(PREFERRED_WINDOW_HEIGHT, bounds.height - bounds.topInset - WINDOW_GAP * 2)
+      const below = Math.max(0, bounds.height - bounds.topInset - height)
+      return clampFrame(
+        {
+          x: Math.round((bounds.width - width) / 2),
+          y: Math.round(bounds.topInset + Math.max(WINDOW_GAP, below / 2)),
+          width,
+          height,
+        },
+        bounds,
+      )
+    }
+
+    /** The frame a maximized window takes: the viewport below the title bar. */
+    function maximizedFrame(bounds) {
+      return clampFrame(
+        {
+          x: WINDOW_GAP,
+          y: bounds.topInset + WINDOW_TOP_GAP,
+          width: bounds.width - WINDOW_GAP * 2,
+          height: bounds.height - bounds.topInset - WINDOW_GAP * 2,
+        },
+        bounds,
+      )
+    }
+
+    //#endregion
+
     //#region panel
 
     function InspectorPanel(props) {
@@ -1187,6 +1293,105 @@ window.__ModuleLoader__.load({
       const [tab, setTab] = useState('fields')
       const panelRef = useRef(null)
       const restoreRef = useRef(null)
+
+      //#region window frame
+
+      /** `{ x, y, width, height }` in viewport pixels, or null while closed. */
+      const [frame, setFrame] = useState(null)
+      const [maximized, setMaximized] = useState(false)
+      const restoreFrameRef = useRef(null)
+
+      // The frame is re-derived from the live viewport, so a window that was
+      // near an edge before a resize can never end up off-screen or over the
+      // title bar.
+      useEffect(() => {
+        if (!state.open) {
+          setFrame(null)
+          setMaximized(false)
+          return undefined
+        }
+        setFrame((current) => current ?? initialFrame(windowBounds()))
+        const onResize = () => {
+          setFrame((current) => (current === null ? current : clampFrame(current, windowBounds())))
+        }
+        window.addEventListener('resize', onResize)
+        return () => window.removeEventListener('resize', onResize)
+      }, [state.open])
+
+      /**
+       * Shared pointer drag: `apply` maps a pointer delta onto the live frame.
+       * @param event - the pointerdown that starts the gesture.
+       * @param apply - builds the requested frame from the origin frame and delta.
+       */
+      const startGesture = useCallback(
+        (event, apply) => {
+          if (event.button !== 0 || frame === null) return
+          const origin = {
+            x: event.clientX,
+            y: event.clientY,
+            frame,
+            bounds: windowBounds(),
+          }
+          const move = (moveEvent) => {
+            setFrame(
+              clampFrame(
+                apply(origin.frame, moveEvent.clientX - origin.x, moveEvent.clientY - origin.y),
+                origin.bounds,
+              ),
+            )
+          }
+          const stop = () => {
+            window.removeEventListener('pointermove', move)
+            window.removeEventListener('pointerup', stop)
+            window.removeEventListener('pointercancel', stop)
+          }
+          window.addEventListener('pointermove', move)
+          window.addEventListener('pointerup', stop)
+          window.addEventListener('pointercancel', stop)
+          event.preventDefault()
+        },
+        [frame],
+      )
+
+      const onHeadPointerDown = useCallback(
+        (event) => {
+          // The header is the drag handle; its own buttons are not.
+          if (event.target !== null && typeof event.target.closest === 'function' && event.target.closest('button') !== null) return
+          startGesture(event, (origin, dx, dy) => ({
+            x: origin.x + dx,
+            y: origin.y + dy,
+            width: origin.width,
+            height: origin.height,
+          }))
+        },
+        [startGesture],
+      )
+
+      const onResizePointerDown = useCallback(
+        (event) => {
+          startGesture(event, (origin, dx, dy) => ({
+            x: origin.x,
+            y: origin.y,
+            width: origin.width + dx,
+            height: origin.height + dy,
+          }))
+        },
+        [startGesture],
+      )
+
+      const toggleMaximized = useCallback(() => {
+        const bounds = windowBounds()
+        if (maximized) {
+          setFrame(clampFrame(restoreFrameRef.current ?? initialFrame(bounds), bounds))
+          setMaximized(false)
+          return
+        }
+        restoreFrameRef.current = frame
+        setFrame(maximizedFrame(bounds))
+        setMaximized(true)
+      }, [frame, maximized])
+
+      //#endregion
 
       const view = state.view
       const sessionId = state.sessionId
@@ -1297,6 +1502,11 @@ window.__ModuleLoader__.load({
         restoreRef.current = document.activeElement
         const onKeyDown = (event) => {
           if (event.key !== 'Escape') return
+          // The window is not modal, so it only answers Escape while it holds
+          // focus: an Escape aimed at the composer or a running turn must reach
+          // the app untouched.
+          const panel = panelRef.current
+          if (panel === null || !panel.contains(document.activeElement)) return
           event.preventDefault()
           event.stopPropagation()
           // Escape inside a non-empty search box clears it; only an Escape with
@@ -1429,43 +1639,70 @@ window.__ModuleLoader__.load({
         null,
         h('style', null, CSS),
         h(
-          // The backdrop carries no pointer handler on purpose: it is
-          // click-through, so a click outside the panel reaches the app
-          // underneath instead of being swallowed or dismissing the window.
+          // A floating window, not a modal: no backdrop at all, so the app
+          // underneath keeps every click. Its top edge is clamped below the
+          // title bar in every gesture, which is what keeps it off the window
+          // controls, and it drags by the header and resizes by the corner.
           'div',
-          { className: 'ci-scrim' },
+          {
+            className: 'ci-win',
+            role: 'dialog',
+            'aria-modal': 'false',
+            'aria-label': tOf(t, 'panel.title'),
+            tabIndex: -1,
+            ref: panelRef,
+            style: frame === null ? { visibility: 'hidden' } : {
+              left: String(frame.x) + 'px',
+              top: String(frame.y) + 'px',
+              width: String(frame.width) + 'px',
+              height: String(frame.height) + 'px',
+            },
+            onMouseDown: (event) => {
+              // Clicking the body focuses the window so Escape reaches it, but
+              // never steals focus from a control the click was aimed at.
+              const target = event.target
+              const interactive =
+                target !== null &&
+                typeof target.closest === 'function' &&
+                target.closest('input,textarea,select,button,a,[role="button"]') !== null
+              if (!interactive && panelRef.current !== null) panelRef.current.focus()
+            },
+          },
           h(
             'div',
-            {
-              className: 'ci-panel',
-              role: 'dialog',
-              'aria-modal': 'false',
-              'aria-label': tOf(t, 'panel.title'),
-              tabIndex: -1,
-              ref: panelRef,
-            },
+            { className: 'ci-head', onPointerDown: onHeadPointerDown },
             h(
               'div',
-              { className: 'ci-head' },
-              h(
-                'div',
-                { className: 'ci-head-main' },
-                h('div', { className: 'ci-title' }, tOf(t, 'panel.title')),
-                h('div', { className: 'ci-sub' }, tOf(t, 'panel.subtitle')),
-              ),
-              h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'ci-close',
-                  'aria-label': tOf(t, 'panel.close'),
-                  title: tOf(t, 'panel.close'),
-                  onClick: close,
-                },
-                '✕',
-              ),
+              { className: 'ci-head-main' },
+              h('div', { className: 'ci-title' }, tOf(t, 'panel.title')),
+              h('div', { className: 'ci-sub' }, tOf(t, 'panel.subtitle')),
             ),
             h(
+              'button',
+              {
+                type: 'button',
+                className: 'ci-close',
+                'aria-label': maximized
+                  ? tOf(t, 'panel.restore')
+                  : tOf(t, 'panel.maximize'),
+                title: maximized ? tOf(t, 'panel.restore') : tOf(t, 'panel.maximize'),
+                onClick: toggleMaximized,
+              },
+              maximized ? '❐' : '⤢',
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'ci-close',
+                'aria-label': tOf(t, 'panel.close'),
+                title: tOf(t, 'panel.close'),
+                onClick: close,
+              },
+              '✕',
+            ),
+          ),
+          h(
               'div',
               { className: 'ci-bar' },
               h(
@@ -1618,9 +1855,14 @@ window.__ModuleLoader__.load({
                 )
               : null,
             h('div', { className: 'ci-body' }, body),
+            h('div', {
+              className: 'ci-resize',
+              title: tOf(t, 'panel.resize'),
+              'aria-hidden': true,
+              onPointerDown: onResizePointerDown,
+            }),
           ),
-        ),
-      )
+        )
     }
 
     //#endregion
@@ -1754,6 +1996,9 @@ window.__ModuleLoader__.load({
       collectFieldHits,
       attrEscape,
       occurrenceOwns,
+      clampFrame,
+      initialFrame,
+      maximizedFrame,
     }
 
     return { inject, apply, internals }

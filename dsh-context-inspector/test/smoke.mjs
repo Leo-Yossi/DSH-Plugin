@@ -563,21 +563,78 @@ if (internals !== undefined) {
 }
 
 // `shell.overlay` is a click-through layer whose occupants opt back into
-// pointer events. A blocking full-screen scrim swallows clicks meant for the
-// app underneath — on Windows its title-bar controls live in the page at the
-// top right — so the backdrop must stay `none` and only the panel takes input.
+// pointer events. There is deliberately no backdrop: a full-screen scrim
+// swallows clicks meant for the app underneath, and on Windows the window
+// controls live in the page at the top right.
 ok(
-  /\.ci-scrim\{[^}]*pointer-events:none/.test(clientSource),
-  'backdrop: the scrim is click-through so the app underneath keeps its own buttons',
+  !clientSource.includes("className: 'ci-scrim'") && !clientSource.includes('.ci-scrim{'),
+  'window: there is no backdrop layer at all, so nothing can swallow the app’s clicks',
 )
 ok(
-  /\.ci-panel\{[^}]*pointer-events:auto/.test(clientSource),
-  'backdrop: the panel itself opts back into pointer events',
+  /\.ci-win\{[^}]*pointer-events:auto/.test(clientSource),
+  'window: the floating window itself opts back into pointer events',
 )
 ok(
-  !/className: 'ci-scrim',[\s\S]{0,200}?onMouseDown/.test(clientSource),
-  'backdrop: the click-through scrim carries no click handler that could dismiss or swallow',
+  /\.ci-head\{[^}]*cursor:move/.test(clientSource) && /\.ci-resize\{[^}]*nwse-resize/.test(clientSource),
+  'window: the header is the drag handle and the corner is the resize grip',
 )
+
+// The window must never rise above the app's title bar, wherever it is dragged
+// or resized to — that is what keeps it off the window controls for good.
+if (internals !== undefined) {
+  const { clampFrame, initialFrame, maximizedFrame } = internals
+  ok(
+    typeof clampFrame === 'function' && typeof initialFrame === 'function',
+    'window: the geometry rules are exposed for the offline test',
+  )
+  const bounds = { width: 1600, height: 1000, topInset: 44 }
+
+  const opened = initialFrame(bounds)
+  ok(opened.y >= bounds.topInset, `window: opens below the title bar (y=${String(opened.y)})`)
+  ok(
+    opened.x >= 0 && opened.x + opened.width <= bounds.width,
+    `window: opens inside the viewport horizontally (${String(opened.x)}..${String(opened.x + opened.width)})`,
+  )
+
+  const draggedUp = clampFrame({ x: -900, y: -900, width: 900, height: 600 }, bounds)
+  ok(
+    draggedUp.y >= bounds.topInset,
+    `window: dragging far past the top stops at the title bar (y=${String(draggedUp.y)})`,
+  )
+  ok(draggedUp.x >= 0, `window: dragging past the left edge stops at it (x=${String(draggedUp.x)})`)
+
+  const draggedOff = clampFrame({ x: 99999, y: 99999, width: 900, height: 600 }, bounds)
+  ok(
+    draggedOff.x + draggedOff.width <= bounds.width &&
+      draggedOff.y + draggedOff.height <= bounds.height,
+    `window: dragging past the right/bottom keeps it on screen (${String(draggedOff.x)},${String(draggedOff.y)})`,
+  )
+
+  const tiny = clampFrame({ x: 100, y: 200, width: 40, height: 30 }, bounds)
+  ok(
+    tiny.width >= 520 && tiny.height >= 320,
+    `window: resizing shrinks to a floor, not to nothing (${String(tiny.width)}x${String(tiny.height)})`,
+  )
+
+  const huge = clampFrame({ x: 0, y: 0, width: 99999, height: 99999 }, bounds)
+  ok(
+    huge.width <= bounds.width && huge.height <= bounds.height - bounds.topInset,
+    `window: resizing grows to the viewport at most (${String(huge.width)}x${String(huge.height)})`,
+  )
+
+  const max = maximizedFrame(bounds)
+  ok(
+    max.y >= bounds.topInset && max.width > 1000,
+    `window: maximizing stays below the title bar and fills the rest (y=${String(max.y)}, w=${String(max.width)})`,
+  )
+  // A short viewport still has to obey the floor and the top clamp together.
+  const tight = clampFrame({ x: 0, y: 0, width: 400, height: 200 }, {
+    width: 700,
+    height: 300,
+    topInset: 44,
+  })
+  ok(tight.y >= 44, `window: on a short viewport the top clamp still wins (y=${String(tight.y)})`)
+}
 
 //#endregion
 

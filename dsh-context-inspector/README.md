@@ -24,6 +24,14 @@ The Host half reconstructs the payload from the Session log as the `contextPaylo
 2. Click the **Sent context** button in the composer tool row, beside Send.
 3. Switch between **Fields** and **Code**; click any row to fold or unfold it; use **Expand all** / **Collapse all** / **Reset folds**.
 4. Type in the find bar to locate and jump to any content — see [Search](#search).
+5. Drag the window by its header, resize it from the bottom-right grip, or use the ⤢ button to maximize and restore.
+
+### The window is not a modal
+
+It has **no backdrop**: the app underneath keeps every click, which is what `shell.overlay` promises and what stops the window from stealing the Windows title-bar controls at the top right. Two consequences:
+
+- **Its top edge is clamped below the title bar** in every drag and resize, so it cannot cover those controls even by accident. The strip height is measured from the shell's drag row, with a conservative fallback when that row is not exposed.
+- **Escape closes it only while it holds focus**, so an Escape aimed at the composer or a running turn reaches the app untouched. The ✕ button always closes it.
 
 ## Search
 
